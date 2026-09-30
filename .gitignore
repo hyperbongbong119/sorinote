@@ -1,0 +1,25 @@
+.env
+.env.*
+!.env.example
+.venv/
+node_modules/
+dist/
+data/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.log
+tmp/
+*.tsbuildinfo
+build/
+release/
+# Local verification evidence and private project notes
+docs/verification*.json
+docs/verification.md
+docs/summary-fix.md
+docs/design.md
+docs/*.png
+*.sqlite3
+*.sqlite3-*
+*.wav
+*.pcm
