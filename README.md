@@ -7,8 +7,8 @@ Windows 시스템 오디오를 전사하고, 원문 링크가 있는 AI 회의�
 - 시스템 오디오 녹음과 약 20~40초 단위 전사 (마이크 혼합 미지원)
 - 주제별 요약, 원문 미리보기와 구간 열기
 - 회의록 제목 수정, 검색, 즐겨찾기, 메모, Markdown/JSON 내보내기
-- 전사: OpenAI / Groq
-- 요약: OpenAI / Claude / Gemini / Groq / OpenRouter
+- 전사: OpenAI / Groq / Gemini
+- 요약: OpenAI / Claude / Gemini / Groq / OpenRouter / DeepSeek / Mistral / Grok
 - 선택적 Notion 페이지 전송
 - SQLite 작업 큐와 중단된 처리 복구
 
@@ -46,7 +46,7 @@ Copy-Item .env.example .env.local
 powershell -ExecutionPolicy Bypass -File tools\build-desktop.ps1
 ```
 
-자동 테스트 37개에는 작업 큐 복구, API 인증 분리, 제목 편집, 원문 링크, 출력 한도 재시도, 모의 네트워크·장치 장애가 포함됩니다. 실제 장시간 녹음, Bluetooth 전환, Notion 전송과 다른 API 제공자의 실서비스 연결은 별도 검증이 필요합니다.
+자동 테스트 41개에는 작업 큐 복구, API 인증 분리, 제목 편집, 원문 링크, 출력 한도 재시도, 모의 네트워크·장치 장애가 포함됩니다. 실제 장시간 녹음, Bluetooth 전환, Notion 전송과 다른 API 제공자의 실서비스 연결은 별도 검증이 필요합니다.
 
 ## 데이터와 제한
 

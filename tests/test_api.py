@@ -13,6 +13,21 @@ from fastapi.testclient import TestClient
 
 
 class LocalApiTests(unittest.TestCase):
+    def test_gemini_stt_and_new_summary_keys_persist_without_leaking(self):
+        with tempfile.TemporaryDirectory() as d:
+            env=Path(d)/'.env.local'
+            with patch('backend.app.ENV_FILE',env),patch('backend.services.ENV_FILE',env):
+                for provider in ('deepseek','mistral','xai'):
+                    response=self.client.put('/api/settings',headers=self.headers,json={'stt_provider':'gemini','stt_model':'gemini-2.5-flash-lite','gemini_key':'gemini-fixture-secret','summary_provider':provider,'summary_model':'test-model',provider+'_key':'provider-fixture-secret'})
+                    self.assertEqual(response.status_code,200)
+                    state=self.client.get('/api/status',headers=self.headers)
+                    self.assertTrue(state.json()['ai_configured'])
+                    self.assertEqual(state.json()['settings']['stt_provider'],'gemini')
+                    self.assertNotIn('fixture-secret',state.text)
+                    self.assertNotIn('fixture-secret',str(store.settings()))
+                self.assertEqual(dotenv_values(env)['DEEPSEEK_API_KEY'],'provider-fixture-secret')
+                self.client.put('/api/settings',headers=self.headers,json={})
+
     def test_blank_title_rejected_and_trimmed_title_saved(self):
         m=store.create('제목','meeting')
         self.assertEqual(self.client.patch('/api/meetings/'+m['id'],headers=self.headers,json={'title':'   '}).status_code,400)

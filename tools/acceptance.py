@@ -15,7 +15,7 @@ def run(report):
         os.environ['SORINOTE_HOME']=folder
         os.environ['SORINOTE_ENV_FILE']=str(Path(folder)/'.env.local')
         os.environ['SORINOTE_DATA_DIR']=str(Path(folder)/'data')
-        for name in ('OPENAI_API_KEY','GROQ_API_KEY','GEMINI_API_KEY','ANTHROPIC_API_KEY','OPENROUTER_API_KEY','NOTION_TOKEN'):
+        for name in ('OPENAI_API_KEY','GROQ_API_KEY','GEMINI_API_KEY','ANTHROPIC_API_KEY','OPENROUTER_API_KEY','DEEPSEEK_API_KEY','MISTRAL_API_KEY','XAI_API_KEY','NOTION_TOKEN'):
             os.environ.pop(name,None)
         suite=unittest.TestLoader().loadTestsFromNames(['tests.test_engine','tests.test_provider','tests.test_api','tests.test_resilience'])
         output=io.StringIO()

@@ -13,7 +13,7 @@ from openai import OpenAI
 from .store import atomic_text, stamp
 
 from .paths import ROOT, ENV_FILE
-from .providers import PROVIDERS, client_for, generate_external
+from .providers import PROVIDERS, client_for, generate_external, transcribe_gemini
 
 
 def secrets():
@@ -71,6 +71,8 @@ class AIService:
                                  request['max_output_tokens'],bool(request.get('text')))
 
     def transcribe(self, path, context, settings):
+        if settings.get('stt_provider')=='gemini':
+            return transcribe_gemini(path,context,settings,secrets())
         prompt = '\n'.join(part for part in (settings['glossary'][:1500].strip(), context[-1600:].strip()) if part)
         options = {}
         if prompt:

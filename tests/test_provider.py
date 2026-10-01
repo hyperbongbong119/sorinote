@@ -1,16 +1,58 @@
 import tempfile
+import base64
+import io
+import json
+import wave
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from types import SimpleNamespace
 import httpx
-from backend.providers import client_for, generate_external, list_models
+from backend.providers import client_for, generate_external, list_models, transcribe_gemini, PROVIDERS
 
 from backend.services import AIService
 from backend.services import filter_citations
 
 
 class ProviderContractTests(unittest.TestCase):
+    def test_added_provider_auth_and_chat_transport(self):
+        for provider in ('deepseek','mistral','xai'):
+            with self.subTest(provider=provider), patch('backend.providers.OpenAI') as constructor:
+                client_for(provider,{PROVIDERS[provider]['env']:'own-fixture','OPENAI_API_KEY':'wrong-key'})
+                self.assertEqual(constructor.call_args.kwargs['api_key'],'own-fixture')
+                self.assertEqual(constructor.call_args.kwargs['base_url'],PROVIDERS[provider]['url'])
+                method=constructor.return_value.__enter__.return_value.chat.completions.create
+                method.return_value=SimpleNamespace(choices=[SimpleNamespace(finish_reason='stop',message=SimpleNamespace(content='{}'))],usage=SimpleNamespace(prompt_tokens=11,completion_tokens=4))
+                result=generate_external(provider,{PROVIDERS[provider]['env']:'own-fixture'},'deepseek-chat' if provider=='deepseek' else 'fixture','JSON only','input',10000,True)
+                self.assertEqual(result.usage.output_tokens,4)
+                self.assertEqual(method.call_args.kwargs['response_format'],{'type':'json_object'})
+                self.assertEqual(method.call_args.kwargs['max_tokens'],8192 if provider=='deepseek' else 10000)
+
+    def test_gemini_audio_is_mono_and_uses_only_gemini_key(self):
+        with tempfile.TemporaryDirectory() as d, patch('backend.providers.httpx.Client') as client:
+            path=Path(d)/'audio.wav'
+            with wave.open(str(path),'wb') as wav:
+                wav.setnchannels(2);wav.setsampwidth(2);wav.setframerate(48000);wav.writeframes(b'\x01\x00'*96000)
+            post=client.return_value.__enter__.return_value.post
+            body={'candidates':[{'finishReason':'STOP','content':{'parts':[{'thought':True,'text':'hidden reasoning'},{'text':json.dumps({'transcript':'테스트 전사'})}]}}]}
+            post.return_value.json.return_value=body
+            settings={'stt_model':'gemini-2.5-flash-lite','language':'ko','glossary':'용어'}
+            self.assertEqual(transcribe_gemini(path,'이전 문맥',settings,{'GEMINI_API_KEY':'gemini-fixture','OPENAI_API_KEY':'wrong-key'}),'테스트 전사')
+            self.assertIn('generativelanguage.googleapis.com',post.call_args.args[0])
+            self.assertEqual(post.call_args.kwargs['headers'],{'x-goog-api-key':'gemini-fixture'})
+            payload=post.call_args.kwargs['json']
+            audio=payload['contents'][0]['parts'][1]['inlineData']
+            with wave.open(io.BytesIO(base64.b64decode(audio['data'])),'rb') as wav:
+                self.assertEqual((wav.getnchannels(),wav.getframerate(),wav.getnframes()),(1,16000,16000))
+            for bad in ({'candidates':[]},{'candidates':[{'finishReason':'MAX_TOKENS'}]}, {'candidates':[{'finishReason':'STOP','content':{'parts':[{'text':'{}'}]}}]}):
+                post.return_value.json.return_value=bad
+                with self.assertRaises(ValueError):transcribe_gemini(path,'',settings,{'GEMINI_API_KEY':'fixture'})
+
+    def test_gemini_stt_routes_without_openai_transcription(self):
+        with patch('backend.services.transcribe_gemini',return_value='speech') as transcribe, patch('backend.services.secrets',return_value={}), patch.object(AIService,'client') as client:
+            self.assertEqual(AIService().transcribe('audio.wav','context',{'stt_provider':'gemini'}),'speech')
+            transcribe.assert_called_once();client.assert_not_called()
+
     def test_truncated_json_retries_with_more_room_and_counts_all_usage(self):
         ai=AIService(); ai.client=MagicMock()
         method=ai.client.return_value.__enter__.return_value.responses.create

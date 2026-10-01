@@ -3,11 +3,13 @@ import { Link2, Save, ShieldCheck } from 'lucide-react';
 import { api, type Status, type Notify, type Provider } from './api';
 import { PageTitle } from './components';
 
-const names:Record<Provider,string>={openai:'OpenAI',groq:'Groq',gemini:'Google Gemini',anthropic:'Anthropic Claude',openrouter:'OpenRouter'};
-const defaults:Record<Provider,string>={openai:'gpt-5.6-luna',groq:'llama-3.3-70b-versatile',gemini:'gemini-3.8-flash',anthropic:'claude-haiku-4-5',openrouter:'openai/gpt-4.1-mini'};
-const suggestions:Record<Provider,string[]>={openai:['gpt-5.6-luna'],groq:['llama-3.3-70b-versatile','openai/gpt-oss-120b'],gemini:['gemini-3.8-flash'],anthropic:['claude-haiku-4-5','claude-sonnet-5-5'],openrouter:['openai/gpt-4.1-mini']};
-const emptyKeys={openai_key:'',groq_key:'',gemini_key:'',anthropic_key:'',openrouter_key:'',notion_token:''};
-const hints:Record<Provider,string>={openai:'기존 전사·요약을 그대로 사용할 때',groq:'Whisper 전사 또는 Llama·GPT-OSS 요약을 사용할 때',gemini:'Google의 Flash 계열로 요약할 때',anthropic:'Haiku로 시작하거나 Sonnet으로 요약 품질을 비교할 때',openrouter:'여러 회사의 요약 모델을 하나의 API로 비교할 때'};
+const names:Record<Provider,string>={openai:'OpenAI',groq:'Groq',gemini:'Google Gemini',anthropic:'Anthropic Claude',openrouter:'OpenRouter',deepseek:'DeepSeek',mistral:'Mistral',xai:'Grok (xAI)'};
+const defaults:Record<Provider,string>={openai:'gpt-5.6-luna',groq:'llama-3.3-70b-versatile',gemini:'gemini-2.5-flash-lite',anthropic:'claude-haiku-4-5',openrouter:'openai/gpt-4.1-mini',deepseek:'deepseek-flash',mistral:'mistral-small-latest',xai:'grok-4.7'};
+const suggestions:Record<Provider,string[]>={openai:['gpt-5.6-luna'],groq:['llama-3.3-70b-versatile','openai/gpt-oss-120b'],gemini:['gemini-2.5-flash-lite','gemini-3.1-flash-lite','gemini-3.5-flash-lite','gemini-3.8-flash'],anthropic:['claude-haiku-4-5','claude-sonnet-5-5'],openrouter:['openai/gpt-4.1-mini'],deepseek:['deepseek-flash','deepseek-v4-pro'],mistral:['mistral-small-latest','mistral-large-latest'],xai:['grok-4.7']};
+const emptyKeys={openai_key:'',groq_key:'',gemini_key:'',anthropic_key:'',openrouter_key:'',deepseek_key:'',mistral_key:'',xai_key:'',notion_token:''};
+const hints:Record<Provider,string>={openai:'기존 전사·요약을 그대로 사용할 때',groq:'Whisper 전사 또는 Llama·GPT-OSS 요약을 사용할 때',gemini:'하나의 Gemini 키로 음성 전사와 요약을 사용할 때',anthropic:'Haiku로 시작하거나 Sonnet으로 요약 품질을 비교할 때',openrouter:'여러 회사의 요약 모델을 하나의 API로 비교할 때',deepseek:'DeepSeek 모델로 요약할 때',mistral:'Mistral Small·Large로 요약할 때',xai:'Grok 모델로 요약할 때'};
+
+const sttModels={openai:['gpt-4o-transcribe','gpt-4o-mini-transcribe'],groq:['whisper-large-v3-turbo','whisper-large-v3'],gemini:suggestions.gemini};
 
 export default function Settings({status,refresh,notify}: {status:Status;refresh:()=>Promise<void>;notify:Notify}) {
   const [form,setForm]=useState({...status.settings,...emptyKeys});
@@ -21,7 +23,7 @@ export default function Settings({status,refresh,notify}: {status:Status;refresh
     <PageTitle title="설정" sub="전사와 요약에 사용할 서비스를 선택하세요." action={<button className="primary" disabled={busy} onClick={save}><Save size={17}/> 설정 저장</button>}/>
     <div className="settings-page">
       <section className="settings-section"><div><h2>전사·요약 모델</h2><p>서로 다른 서비스를 조합할 수 있습니다.</p></div><div className="settings-fields">
-        <div className="field-pair"><label>전사 서비스<select value={form.stt_provider} onChange={e=>{const p=e.target.value as 'openai'|'groq';setForm({...form,stt_provider:p,stt_model:p==='openai'?'gpt-4o-transcribe':'whisper-large-v3-turbo'});}}><option value="openai">OpenAI</option><option value="groq">Groq</option></select></label><label>전사 모델<select value={form.stt_model} onChange={e=>field('stt_model',e.target.value)}>{(form.stt_provider==='openai'?['gpt-4o-transcribe','gpt-4o-mini-transcribe']:['whisper-large-v3-turbo','whisper-large-v3']).map(model=><option key={model}>{model}</option>)}</select></label></div>
+        <div className="field-pair"><label>전사 서비스<select value={form.stt_provider} onChange={e=>{const p=e.target.value as keyof typeof sttModels;setForm({...form,stt_provider:p,stt_model:sttModels[p][0]});}}><option value="openai">OpenAI</option><option value="groq">Groq</option><option value="gemini">Google Gemini</option></select></label><label>전사 모델<select value={form.stt_model} onChange={e=>field('stt_model',e.target.value)}>{sttModels[form.stt_provider].map(model=><option key={model}>{model}</option>)}</select></label></div>
         <div className="field-pair"><label>요약 서비스<select value={form.summary_provider} onChange={e=>{const p=e.target.value as Provider;setForm({...form,summary_provider:p,summary_model:defaults[p]});}}>{Object.entries(names).map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label><label>요약 모델 ID<input list="summary-models" value={form.summary_model} onChange={e=>field('summary_model',e.target.value)} maxLength={160}/><datalist id="summary-models">{(models[form.summary_provider]||suggestions[form.summary_provider]).map(model=><option key={model} value={model}/>)}</datalist></label></div>
         <p className="field-hint">음성은 전사 서비스로, 전사된 글은 요약 서비스로 전송됩니다. 변경은 새 녹음과 요약 재생성부터 적용됩니다.</p>
         <button disabled={busy||!status.providers_configured[status.settings.summary_provider]} onClick={testSummary}>저장된 요약 모델 테스트 · 소액 API 사용</button>

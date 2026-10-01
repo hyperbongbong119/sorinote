@@ -1,3 +1,17 @@
+# Gemini 전사 및 추가 요약 API
+
+설정에서 전사 서비스로 **Google Gemini**를 선택하면 Gemini 키 하나로 전사와 요약을 모두 사용할 수 있습니다. 전사는 2.5 Flash-Lite, 3.1 Flash-Lite, 3.5 Flash-Lite, 3.8 Flash를 선택할 수 있습니다. 짧은 오디오 구간을 16kHz 모노 WAV로 변환해 Google generateContent API로 보내며, 응답이 잘리거나 차단되면 원본을 보존하고 재시도합니다.
+
+요약 서비스에는 **DeepSeek, Mistral, Grok (xAI)**도 추가되었습니다. 각각 `DEEPSEEK_API_KEY`, `MISTRAL_API_KEY`, `XAI_API_KEY`를 사용하며 공식 서비스 주소로만 전송합니다. OpenRouter를 이용하면 다른 회사의 모델도 모델 ID로 선택할 수 있습니다.
+
+사용 순서: 서비스 선택 → 해당 API 키 입력 → 설정 저장 → 모델 목록 조회 → 요약 테스트. 모델의 제공 여부는 계정별로 다를 수 있습니다. 변경한 전사 모델은 새 녹음에 적용됩니다.
+
+추가 서비스의 실제 키가 없어 라이브 호출은 검증하지 않았습니다. 자동 테스트에서는 오디오 변환, Gemini 정상/차단/불완전 응답, API 키 분리, 설정 저장을 확인했습니다. Gemini 전사 사용량은 현재 회의록의 요약 토큰 누계에 포함하지 않습니다.
+
+공식 API 문서: [Gemini](https://ai.google.dev/api/generate-content), [DeepSeek](https://api-docs.deepseek.com/api/create-chat-completion/), [Mistral](https://docs.mistral.ai/api/endpoint/chat), [Grok](https://docs.x.ai/developers/model-capabilities/legacy/chat-completions).
+
+---
+
 # API 선택과 연결
 
 2026-09-30 공식 API 문서 기준으로 지원 방식을 검토했다. 아래는 한국어 품질 벤치마크 순위가 아니라 기능·비용·연결 방식에 따른 비교다. 계정별 제공 모델과 실제 생성 가능 여부는 설정의 조회/테스트로 확인한다.

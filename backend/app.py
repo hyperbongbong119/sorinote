@@ -107,8 +107,8 @@ class EditMeeting(BaseModel):
 
 class Settings(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    stt_provider: Literal['openai','groq'] = 'openai'
-    summary_provider: Literal['openai','groq','gemini','anthropic','openrouter'] = 'openai'
+    stt_provider: Literal['openai','groq','gemini'] = 'openai'
+    summary_provider: Literal['openai','groq','gemini','anthropic','openrouter','deepseek','mistral','xai'] = 'openai'
     stt_model: str = Field(default='gpt-4o-transcribe',min_length=1,max_length=100)
     summary_model: str = Field(default='gpt-5.6-luna',min_length=1,max_length=160,pattern=r'^[a-zA-Z0-9._:/-]+$')
     language: str = Field(default='ko',max_length=5,pattern=r'^[a-z-]*$')
@@ -121,6 +121,9 @@ class Settings(BaseModel):
     gemini_key: str = Field(default='',max_length=1000)
     anthropic_key: str = Field(default='',max_length=1000)
     openrouter_key: str = Field(default='',max_length=1000)
+    deepseek_key: str = Field(default='',max_length=1000)
+    mistral_key: str = Field(default='',max_length=1000)
+    xai_key: str = Field(default='',max_length=1000)
     notion_token: str = Field(default='',max_length=1000)
 
 
@@ -316,7 +319,7 @@ def save_settings(body: Settings):
 
 
 @app.post('/api/settings/models/{provider}')
-def provider_models(provider: Literal['openai','groq','gemini','anthropic','openrouter']):
+def provider_models(provider: Literal['openai','groq','gemini','anthropic','openrouter','deepseek','mistral','xai']):
     try:
         return {'models':list_models(provider,secrets()),'provider':provider}
     except Exception as exc:

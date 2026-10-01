@@ -21,8 +21,8 @@ export async function download(mid: string, kind: string) {
   const a = document.createElement('a'); a.href = url; a.download = `sorinote-${mid.slice(0,8)}.${kind}`; a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-export type Provider = 'openai'|'groq'|'gemini'|'anthropic'|'openrouter';
-export type SettingsData = { stt_provider:'openai'|'groq';summary_provider:Provider; stt_model: string; summary_model: string; language: string; glossary: string; retention: string; notion_parent: string; monthly_budget: string };
+export type Provider = 'openai'|'groq'|'gemini'|'anthropic'|'openrouter'|'deepseek'|'mistral'|'xai';
+export type SettingsData = { stt_provider:'openai'|'groq'|'gemini';summary_provider:Provider; stt_model: string; summary_model: string; language: string; glossary: string; retention: string; notion_parent: string; monthly_budget: string };
 export type Status = { recording: boolean; current_id: string | null; level: number; device: string; capture_error: string; worker_error: string; queued: number; openai_configured: boolean; ai_configured:boolean; providers_configured:Record<Provider,boolean>; notion_configured: boolean; data_dir: string; settings: SettingsData };
 export type Chunk = { id: number; seq: number; start: number; duration: number; status: string; text: string; error: string; attempts: number };
 export type Meeting = { id: string; title: string; template: string; created: number; ended: number | null; status: string; summary: string; notes: string; tags: string; favorite: number; video_path: string; notion_requested: number; notion_status: string; notion_url: string; state: Record<string,string[]>; error: string; capture_warning: string; cleaned: number; chunks: Chunk[]; transcript: string; local_path: string; pending: number };
