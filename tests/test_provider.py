@@ -15,6 +15,22 @@ from backend.services import filter_citations
 
 
 class ProviderContractTests(unittest.TestCase):
+    def test_all_compatible_providers_retry_truncation_and_reject_empty_or_blocked_output(self):
+        for provider in ('groq','openrouter','deepseek','mistral','xai'):
+            with self.subTest(provider=provider),patch('backend.providers.client_for') as factory:
+                method=factory.return_value.__enter__.return_value.chat.completions.create
+                def response(reason,text):
+                    return SimpleNamespace(choices=[SimpleNamespace(finish_reason=reason,message=SimpleNamespace(content=text))],usage=SimpleNamespace(prompt_tokens=3,completion_tokens=5))
+                method.side_effect=[response('length','partial'),response('stop','complete')]
+                result=generate_external(provider,{},'fixture','instructions','input',10000,False)
+                self.assertEqual((result.usage.input_tokens,result.usage.output_tokens),(6,10))
+                self.assertEqual([c.kwargs['max_tokens'] for c in method.call_args_list],[10000,20000])
+                method.side_effect=None
+                for reason,text in [('length','partial'),('content_filter','blocked'),('stop','')]:
+                    method.return_value=response(reason,text)
+                    with self.assertRaises(ValueError):
+                        generate_external(provider,{},'fixture','instructions','input',20000,False)
+
     def test_gemini_missing_source_links_retries_and_counts_usage(self):
         ai=AIService();ai.generate=MagicMock()
         fields=('topics','key_points','decisions','action_items','questions','important_terms','chapters')

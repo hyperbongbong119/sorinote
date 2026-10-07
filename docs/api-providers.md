@@ -6,6 +6,10 @@
 
 사용 순서: 서비스 선택 → 해당 API 키 입력 → 설정 저장 → 모델 목록 조회 → 요약 테스트. 모델의 제공 여부는 계정별로 다를 수 있습니다. 변경한 전사 모델은 새 녹음에 적용됩니다.
 
+2026-10-07 추가 점검: 저장된 OpenAI와 Gemini 키로 한국어 합성 음성 전사 → JSON 상태 → 한국어 요약 → 원문 링크까지 실제 호출에 성공했습니다. Groq, Claude, OpenRouter, DeepSeek, Mistral, xAI는 키가 없어 실서비스 호출을 완료하지 않았습니다. 서비스별 인증 분리와 응답 오류·잘림 처리는 모의 응답으로 검증했습니다. 호환 API의 잘린 응답은 최대 20,000 토큰까지 재시도하고, 기존 deepseek-chat은 8,192 한도를 유지합니다. 빈 응답과 차단된 응답은 저장하지 않습니다.
+
+각 API 카드의 **이 API 요약 테스트**에서 모델 ID를 지정해 실제 JSON 및 최종 요약을 함께 점검합니다. 저장된 키를 사용하며 현재 전사·요약 선택을 바꾸지 않습니다. 입력 소스의 **5초 전사 API 테스트**는 현재 저장된 전사 모델로 소리 인식까지 시험합니다.
+
 2026-10-07 Gemini 실제 키로 한국어 오디오 전사와 JSON 상태 생성, 한국어 요약을 검증했습니다. 다른 추가 서비스는 모의 응답으로 검증했습니다. 자동 테스트에서는 오디오 변환, Gemini 정상/차단/불완전 응답, API 키 분리, 설정 저장을 확인했습니다. Gemini 전사 사용량은 현재 회의록의 요약 토큰 누계에 포함하지 않습니다.
 
 공식 API 문서: [Gemini](https://ai.google.dev/api/generate-content), [DeepSeek](https://api-docs.deepseek.com/api/create-chat-completion/), [Mistral](https://docs.mistral.ai/api/endpoint/chat), [Grok](https://docs.x.ai/developers/model-capabilities/legacy/chat-completions).

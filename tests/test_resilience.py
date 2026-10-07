@@ -10,13 +10,48 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 
-from backend.capture import Capture
+from backend.capture import Capture, select_device, source_id, sample_source
 from backend.engine import Engine
 from backend.store import Store
 from tests.test_engine import FakeAI
 
 
 class ResilienceTests(unittest.TestCase):
+    def test_selected_source_survives_device_index_changes_and_never_falls_back(self):
+        d={'name':'My microphone','isLoopbackDevice':False,'maxInputChannels':1,'index':8}
+        audio=MagicMock()
+        audio.get_device_info_generator_by_host_api.return_value=[{**d,'index':15}]
+        self.assertEqual(select_device(audio,source_id(d))['index'],15)
+        audio.get_device_info_generator_by_host_api.return_value=[]
+        with self.assertRaisesRegex(ValueError,'연결되어 있지'):
+            select_device(audio,source_id(d))
+        audio.get_default_wasapi_loopback.assert_not_called()
+
+    def test_explicit_microphone_does_not_follow_default_output(self):
+        d={'name':'My microphone','isLoopbackDevice':False,'maxInputChannels':1,'defaultSampleRate':16000,'index':8}
+        self.engine.capture.source=source_id(d)
+        audio=MagicMock();audio.get_device_info_generator_by_host_api.return_value=[d]
+        fake_pa=SimpleNamespace(paInt16=8,paWASAPI=13,PyAudio=MagicMock())
+        fake_pa.PyAudio.return_value.__enter__.return_value=audio
+        with patch.dict(sys.modules,{'pyaudiowpatch':fake_pa}),patch.object(self.engine.capture,'_write_chunk',side_effect=lambda *args:self.engine.capture.stop_event.set()),patch('backend.capture.device_info') as default:
+            self.engine.capture._record_device(self.mid)
+        self.assertEqual(audio.open.call_args.kwargs['input_device_index'],8)
+        default.assert_not_called()
+        audio.open.return_value.close.assert_called_once()
+
+    def test_preview_silence_is_bounded_and_closes_stream(self):
+        audio=MagicMock()
+        audio.get_default_wasapi_loopback.return_value={'name':'Silent speaker','maxInputChannels':2,'defaultSampleRate':48000,'index':4}
+        audio.open.return_value.get_read_available.return_value=0
+        fake_pa=SimpleNamespace(paInt16=8,PyAudio=MagicMock())
+        fake_pa.PyAudio.return_value.__enter__.return_value=audio
+        with patch.dict(sys.modules,{'pyaudiowpatch':fake_pa}),patch('backend.capture.time.monotonic',side_effect=[0,0,6]),patch('backend.capture.time.sleep'):
+            wav,result=sample_source()
+        self.assertTrue(wav.startswith(b'RIFF'))
+        self.assertFalse(result['has_signal'])
+        audio.open.return_value.read.assert_not_called()
+        audio.open.return_value.close.assert_called_once()
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

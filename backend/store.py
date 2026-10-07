@@ -140,7 +140,7 @@ class Store:
 
     def settings(self):
         defaults = {'stt_provider':'openai','summary_provider':'openai','stt_model':'gpt-4o-transcribe', 'summary_model':'gpt-5.6-luna',
-                    'language':'ko', 'glossary':'', 'retention':'immediate',
+                    'language':'ko', 'glossary':'', 'retention':'immediate', 'audio_source':'default',
                     'notion_parent':'', 'monthly_budget':'10'}
         defaults.update({r['key']:r['value'] for r in self.query('SELECT * FROM settings')})
         return defaults

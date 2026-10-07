@@ -13,6 +13,47 @@ from fastapi.testclient import TestClient
 
 
 class LocalApiTests(unittest.TestCase):
+    def test_source_preview_does_not_create_meeting_or_send_silence_to_api(self):
+        from backend.app import engine
+        before=len(store.query('SELECT id FROM meetings'))
+        result={'device':'fixture','duration':5,'peak':0,'rms':0,'has_signal':False,'seconds':5}
+        with patch('backend.app.sample_source',return_value=(b'RIFFfixture',result)),patch.object(engine.ai,'transcribe') as ai:
+            response=self.client.post('/api/audio/test',headers=self.headers,json={'source':'default','transcribe':True})
+        self.assertEqual(response.status_code,200)
+        self.assertFalse(response.json()['has_signal'])
+        ai.assert_not_called()
+        self.assertEqual(len(store.query('SELECT id FROM meetings')),before)
+
+    def test_preview_preserves_playback_when_api_fails(self):
+        from backend.app import engine
+        result={'device':'fixture','duration':5,'peak':.2,'rms':.1,'has_signal':True,'seconds':5}
+        with patch('backend.app.sample_source',return_value=(b'RIFFfixture',result)),patch.object(engine.ai,'transcribe',side_effect=RuntimeError('secret-body')):
+            response=self.client.post('/api/audio/test',headers=self.headers,json={'source':'default','transcribe':True})
+        self.assertTrue(response.json()['audio'].startswith('data:audio/wav;base64,'))
+        self.assertIn('api_error',response.json())
+        self.assertNotIn('secret-body',response.text)
+
+    def test_source_change_is_blocked_during_recording_and_invalid_id_rejected(self):
+        m=store.create('active source guard','meeting')
+        try:
+            self.assertEqual(self.client.put('/api/audio/source',headers=self.headers,json={'source':'default'}).status_code,409)
+            self.assertEqual(self.client.post('/api/audio/test',headers=self.headers,json={'source':'default'}).status_code,409)
+        finally:
+            store.update(m['id'],status='complete')
+        self.assertEqual(self.client.post('/api/audio/test',headers=self.headers,json={'source':'../../private.wav'}).status_code,422)
+
+    def test_provider_summary_test_exercises_both_stages_without_changing_settings(self):
+        from backend.app import engine
+        from types import SimpleNamespace
+        settings=store.settings()
+        with patch.object(engine.ai,'state',return_value=({'key_points':['설명 [원문](#chunk-1)']},SimpleNamespace(input_tokens=2,output_tokens=3))) as state,patch.object(engine.ai,'summarize',return_value=('한국어 요약 [원문](#chunk-1)',SimpleNamespace(input_tokens=4,output_tokens=5))) as summary:
+            response=self.client.post('/api/settings/test-summary',headers=self.headers,json={'provider':'mistral','model':'mistral-small-latest'})
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(response.json()['input_tokens'],6)
+        self.assertEqual(state.call_args.args[2]['summary_provider'],'mistral')
+        summary.assert_called_once()
+        self.assertEqual(store.settings(),settings)
+
     def test_gemini_stt_and_new_summary_keys_persist_without_leaking(self):
         with tempfile.TemporaryDirectory() as d:
             env=Path(d)/'.env.local'
@@ -59,6 +100,8 @@ class LocalApiTests(unittest.TestCase):
         tmp.cleanup()
 
     def setUp(self):
+        with store.connect() as db:
+            db.executescript('DELETE FROM chunks; DELETE FROM meetings; DELETE FROM settings;')
         self.client=TestClient(app)
         self.headers={'X-Sorinote-Token':token}
 

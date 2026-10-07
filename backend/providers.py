@@ -27,10 +27,14 @@ STT_MODELS = {'openai':['gpt-4o-transcribe','gpt-4o-mini-transcribe'],
 AI_FIELDS = ('stt_provider','stt_model','summary_provider','summary_model')
 
 
+class ProviderError(ValueError):
+    """Application-owned messages that are safe to display."""
+
+
 def key_for(provider, keys):
     key = keys.get(PROVIDERS[provider]['env'],'')
     if not key:
-        raise ValueError(f"{PROVIDERS[provider]['name']} API 키를 설정하세요.")
+        raise ProviderError(f"{PROVIDERS[provider]['name']} API 키를 설정하세요.")
     return key
 
 
@@ -44,7 +48,7 @@ def claude_headers(keys):
     return {'x-api-key':key_for('anthropic',keys),'anthropic-version':'2023-06-01'}
 
 
-class GeminiError(ValueError):
+class GeminiError(ProviderError):
     """Safe, actionable errors without provider payloads or credentials."""
 
 
@@ -134,9 +138,11 @@ def generate_external(provider, keys, model, instructions, text, max_tokens, jso
                 'messages':[{'role':'user','content':text}]})
             response.raise_for_status()
             body=response.json()
-        if body.get('stop_reason')=='max_tokens':
-            raise ValueError('Claude 응답 길이 제한에 도달했습니다.')
+        if body.get('stop_reason') not in ('end_turn','stop_sequence'):
+            raise ProviderError('Claude 응답이 완성되지 않았습니다. 출력 한도와 모델 설정을 확인하세요.')
         output=''.join(part['text'] for part in body.get('content',[]) if part.get('type')=='text')
+        if not output.strip():
+            raise ProviderError('Claude에서 빈 응답을 받았습니다.')
         usage=body.get('usage',{})
         return SimpleNamespace(output_text=output, usage=SimpleNamespace(
             input_tokens=usage.get('input_tokens',0)+usage.get('cache_read_input_tokens',0)+usage.get('cache_creation_input_tokens',0),
@@ -147,18 +153,36 @@ def generate_external(provider, keys, model, instructions, text, max_tokens, jso
     if json_mode:
         options['response_format']={'type':'json_object'}
     with client_for(provider, keys) as client:
-        response=client.chat.completions.create(model=model,
-            messages=[{'role':'system','content':instructions},{'role':'user','content':text}],
-            max_tokens=max_tokens,**options)
-    choice=response.choices[0]
-    if choice.finish_reason not in ('stop',None):
-        raise ValueError('모델 응답이 완성되지 않았습니다. 출력 한도와 모델 지원을 확인하세요.')
-    usage=response.usage
-    return SimpleNamespace(output_text=choice.message.content or '',usage=SimpleNamespace(
-        input_tokens=usage.prompt_tokens if usage else 0, output_tokens=usage.completion_tokens if usage else 0))
+        incoming=outgoing=0
+        limit=8192 if provider=='deepseek' and model=='deepseek-chat' else 20000
+        while True:
+            response=client.chat.completions.create(model=model,
+                messages=[{'role':'system','content':instructions},{'role':'user','content':text}],
+                max_tokens=max_tokens,**options)
+            if not response.choices:
+                raise ProviderError('모델에서 응답을 받지 못했습니다.')
+            choice=response.choices[0]; usage=response.usage
+            incoming+=usage.prompt_tokens if usage else 0
+            outgoing+=usage.completion_tokens if usage else 0
+            if choice.finish_reason=='length' and max_tokens<limit:
+                max_tokens=min(limit,max_tokens*2)
+                continue
+            if choice.finish_reason!='stop':
+                raise ProviderError('모델 응답이 완성되지 않았습니다. 출력 한도와 모델 지원을 확인하세요.')
+            output=choice.message.content or ''
+            if not output.strip():
+                raise ProviderError('모델에서 빈 응답을 받았습니다. 모델 지원을 확인하세요.')
+            return SimpleNamespace(output_text=output,usage=SimpleNamespace(input_tokens=incoming,output_tokens=outgoing))
 
 
 def list_models(provider, keys):
+    if provider=='gemini':
+        with httpx.Client(timeout=30) as client:
+            response=client.get('https://generativelanguage.googleapis.com/v1beta/models',
+                                headers={'x-goog-api-key':key_for(provider,keys)},params={'pageSize':1000})
+            response.raise_for_status()
+            return sorted(m['name'].removeprefix('models/') for m in response.json().get('models',[])
+                          if 'generateContent' in m.get('supportedGenerationMethods',[]))
     if provider=='anthropic':
         with httpx.Client(timeout=30) as client:
             response=client.get(PROVIDERS[provider]['url']+'/models',headers=claude_headers(keys),params={'limit':1000})

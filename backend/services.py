@@ -13,7 +13,7 @@ from openai import OpenAI
 from .store import atomic_text, stamp
 
 from .paths import ROOT, ENV_FILE
-from .providers import PROVIDERS, client_for, generate_external, transcribe_gemini, GeminiError
+from .providers import PROVIDERS, client_for, generate_external, transcribe_gemini, GeminiError, ProviderError
 
 
 def secrets():
@@ -22,7 +22,7 @@ def secrets():
 
 
 def safe_error(exc):
-    if isinstance(exc, GeminiError):
+    if isinstance(exc, ProviderError):
         return str(exc)
     code = getattr(exc, 'status_code', None)
     if isinstance(exc, httpx.HTTPStatusError):

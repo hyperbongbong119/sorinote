@@ -4,6 +4,8 @@ import os
 import sys
 import tempfile
 import time
+import io
+import wave
 from pathlib import Path
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
@@ -36,7 +38,13 @@ class FixtureCapture(Capture):
 
 engine.ai=FixtureAI()
 engine.capture=FixtureCapture(store)
-module.device_info=lambda:{'name':'QA fixture (no recording)','rate':16000,'channels':1}
+module.device_info=lambda *args:{'name':'QA fixture (no recording)','rate':16000,'channels':1}
+module.list_sources=lambda:[{'id':'default','name':'기본 출력 (QA)','kind':'loopback'},{'id':'1'*24,'name':'테스트 마이크 (QA)','kind':'microphone'}]
+buffer=io.BytesIO()
+with wave.open(buffer,'wb') as wav:
+    wav.setnchannels(1);wav.setsampwidth(2);wav.setframerate(16000);wav.writeframes(b'\x00\x10'*80000)
+module.sample_source=lambda source:(buffer.getvalue(),{'device':'테스트 입력 (QA)','duration':5,'peak':.125,'rms':.125,'has_signal':True,'seconds':5})
+module.secrets=lambda:{**{v['env']:'fixture-only' for v in module.PROVIDERS.values()},'NOTION_TOKEN':''}
 m=store.create('QA · 웹사이트 출시 회의','meeting')
 store.update(m['id'],status='complete',ended=m['created']+1800,summary='### 강의 개요\n- **주제**: 웹사이트 출시 계획 [원문](#chunk-1)\n\n### 실행 계획\n- **출시 일정**: 다음 주 월요일 [원문](#chunk-1)\n  - Alex가 체크리스트 준비 [원문](#chunk-1)',state=json.dumps({'chapters':['[00:00:00] 출시 일정','[00:12:00] 업무 분담']}),cleaned=1)
 store.execute("INSERT INTO chunks(meeting_id,seq,start,duration,rate,channels,path,status,text) VALUES(?,?,?,?,?,?,?,?,?)",(m['id'],1,0,1800,16000,1,'unused','done','다음 주 월요일에 출시하고 Alex가 체크리스트를 준비합니다.'))

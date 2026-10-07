@@ -1,4 +1,6 @@
 import json
+import base64
+import tempfile
 import os
 import re
 import secrets as tokenlib
@@ -16,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .capture import device_info
+from .capture import device_info, list_sources, sample_source
 from .engine import Engine
 from .services import ROOT, safe_error, secrets
 from .store import Store
@@ -112,6 +114,7 @@ class Settings(BaseModel):
     stt_model: str = Field(default='gpt-4o-transcribe',min_length=1,max_length=100)
     summary_model: str = Field(default='gpt-5.6-luna',min_length=1,max_length=160,pattern=r'^[a-zA-Z0-9._:/-]+$')
     language: str = Field(default='ko',max_length=5,pattern=r'^[a-z-]*$')
+    audio_source: str = Field(default='default',pattern=r'^(default|[a-f0-9]{24})$')
     glossary: str = Field(default='',max_length=1500)
     retention: Literal['immediate','day','week','manual'] = 'immediate'
     notion_parent: str = Field(default='',max_length=2000)
@@ -160,9 +163,63 @@ def status():
 @app.get('/api/device')
 def device():
     try:
-        return device_info()
+        return device_info(store.settings()['audio_source'])
     except Exception as exc:
         raise HTTPException(503, f'시스템 오디오 장치를 확인할 수 없습니다 ({type(exc).__name__}).')
+
+
+class SourceTest(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    source: str = Field(default='default',pattern=r'^(default|[a-f0-9]{24})$')
+    transcribe: bool = False
+
+
+@app.put('/api/audio/source')
+def set_source(body: SourceTest):
+    with start_lock:
+        if store.query("SELECT id FROM meetings WHERE status='recording'"):
+            raise HTTPException(409,'녹음을 종료한 뒤 입력 소스를 변경하세요.')
+        try:
+            device_info(body.source)
+        except ValueError:
+            raise
+        except Exception:
+            raise HTTPException(503,'입력 장치를 사용할 수 없습니다. 연결 상태를 확인하세요.')
+        store.set_settings({'audio_source':body.source})
+    return {'ok':True}
+
+
+@app.get('/api/audio/sources')
+def audio_sources():
+    try:
+        return {'sources':list_sources()}
+    except Exception as exc:
+        raise HTTPException(503,f'입력 장치 목록을 확인할 수 없습니다 ({type(exc).__name__}).')
+
+
+@app.post('/api/audio/test')
+def test_source(body: SourceTest):
+    settings=store.settings()
+    # The same lock prevents recording from starting while a preview owns the device.
+    with start_lock:
+        if store.query("SELECT id FROM meetings WHERE status='recording'"):
+            raise HTTPException(409,'녹음을 종료한 뒤 입력 소스를 테스트하세요.')
+        try:
+            wav,result=sample_source(body.source)
+        except ValueError:
+            raise
+        except Exception as exc:
+            raise HTTPException(503,f'입력 장치를 열 수 없습니다 ({type(exc).__name__}). 장치 연결과 마이크 권한을 확인하세요.')
+    result['audio']='data:audio/wav;base64,'+base64.b64encode(wav).decode('ascii')
+    if body.transcribe and result['has_signal']:
+        try:
+            with tempfile.TemporaryDirectory(prefix='sorinote-source-test-') as folder:
+                path=Path(folder)/'sample.wav';path.write_bytes(wav)
+                result['transcript']=engine.ai.transcribe(path,'',settings)
+        except Exception as exc:
+            # Keep preview available even if the selected API fails.
+            result['api_error']=safe_error(exc)
+    return result
 
 
 @app.get('/api/meetings')
@@ -326,11 +383,23 @@ def provider_models(provider: Literal['openai','groq','gemini','anthropic','open
         raise HTTPException(400,safe_error(exc))
 
 
+class SummaryTest(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    provider: Literal['openai','groq','gemini','anthropic','openrouter','deepseek','mistral','xai']
+    model: str = Field(min_length=1,max_length=160,pattern=r'^[a-zA-Z0-9._:/-]+$')
+
+
 @app.post('/api/settings/test-summary')
-def test_summary_model():
+def test_summary_model(body: SummaryTest | None = None):
     try:
-        _, usage = engine.ai.state({},[{'seq':1,'start':0,'text':'연결 테스트입니다. 다음 주 월요일에 회의합니다.'}],store.settings())
-        return {'ok':True,'input_tokens':usage.input_tokens if usage else 0,'output_tokens':usage.output_tokens if usage else 0}
+        settings=store.settings()
+        if body:
+            settings={**settings,'summary_provider':body.provider,'summary_model':body.model}
+        state, usage = engine.ai.state({},[{'seq':1,'start':0,'text':'연결 테스트입니다. 다음 주 월요일에 회의합니다.'}],settings)
+        summary, final_usage=engine.ai.summarize({'title':'API 연결 테스트','template':'meeting','state':json.dumps(state,ensure_ascii=False)},settings)
+        return {'ok':True,'summary':summary,'provider':settings['summary_provider'],'model':settings['summary_model'],
+                'input_tokens':sum(u.input_tokens for u in (usage,final_usage) if u),
+                'output_tokens':sum(u.output_tokens for u in (usage,final_usage) if u)}
     except Exception as exc:
         raise HTTPException(400,safe_error(exc))
 
