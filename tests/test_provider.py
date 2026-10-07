@@ -15,6 +15,56 @@ from backend.services import filter_citations
 
 
 class ProviderContractTests(unittest.TestCase):
+    def test_gemini_missing_source_links_retries_and_counts_usage(self):
+        ai=AIService();ai.generate=MagicMock()
+        fields=('topics','key_points','decisions','action_items','questions','important_terms','chapters')
+        state={k:[] for k in fields};state['key_points']=['설명']
+        cited={**state,'key_points':['설명 [원문](#chunk-2)']}
+        ai.generate.side_effect=[SimpleNamespace(output_text=json.dumps(s),usage=SimpleNamespace(input_tokens=4,output_tokens=5)) for s in (state,cited)]
+        result,usage=ai.state({},[{'seq':2,'start':0,'text':'설명'}],{'summary_provider':'gemini','summary_model':'fixture'})
+        self.assertIn('#chunk-2',result['key_points'][0])
+        self.assertEqual((usage.input_tokens,usage.output_tokens),(8,10))
+        ai.generate.side_effect=None
+        ai.generate.return_value=SimpleNamespace(output_text=json.dumps(state),usage=SimpleNamespace(input_tokens=1,output_tokens=1))
+        with self.assertRaisesRegex(ValueError,'근거 링크'):
+            ai.state({},[{'seq':2,'start':0,'text':'설명'}],{'summary_provider':'gemini','summary_model':'fixture'})
+
+    def test_gemini_unavailable_model_has_safe_actionable_error(self):
+        from backend.services import safe_error
+        with patch('backend.providers.httpx.Client') as client:
+            client.return_value.__enter__.return_value.post.return_value.status_code=404
+            with self.assertRaises(ValueError) as raised:
+                generate_external('gemini',{'GEMINI_API_KEY':'secret-fixture'},'gemini-2.5-flash-lite','한국어','input',100,False)
+            self.assertIn('gemini-3.5-flash-lite',safe_error(raised.exception))
+            self.assertNotIn('secret-fixture',safe_error(raised.exception))
+
+    def test_gemini_native_summary_schema_and_bounded_retry(self):
+        with patch('backend.providers.httpx.Client') as client:
+            post=client.return_value.__enter__.return_value.post
+            post.return_value.status_code=200
+            post.return_value.json.side_effect=[
+                {'candidates':[{'finishReason':'MAX_TOKENS'}],'usageMetadata':{'promptTokenCount':10,'thoughtsTokenCount':3}},
+                {'candidates':[{'finishReason':'STOP','content':{'parts':[{'text':'{}'}]}}],'usageMetadata':{'promptTokenCount':10,'candidatesTokenCount':7}}]
+            result=generate_external('gemini',{'GEMINI_API_KEY':'fixture'},'gemini-3.5-flash-lite','한국어 JSON','input',10000,True)
+            self.assertEqual((result.usage.input_tokens,result.usage.output_tokens),(20,10))
+            self.assertEqual([c.kwargs['json']['generationConfig']['maxOutputTokens'] for c in post.call_args_list],[10000,20000])
+            payload=post.call_args.kwargs['json']
+            self.assertEqual(payload['systemInstruction']['parts'][0]['text'],'한국어 JSON')
+            self.assertIn('key_points',payload['generationConfig']['responseSchema']['required'])
+
+    def test_gemini_english_translation_is_retried_then_rejected(self):
+        with tempfile.TemporaryDirectory() as d, patch('backend.providers.httpx.Client') as client:
+            path=Path(d)/'audio.wav'
+            with wave.open(str(path),'wb') as wav:
+                wav.setnchannels(1);wav.setsampwidth(2);wav.setframerate(16000);wav.writeframes(b'\0\0'*16000)
+            post=client.return_value.__enter__.return_value.post
+            post.return_value.status_code=200
+            post.return_value.json.return_value={'candidates':[{'finishReason':'STOP','content':{'parts':[{'text':json.dumps({'transcript':'English translation '*20+'한'})}]}}]}
+            with self.assertRaisesRegex(ValueError,'응답 언어'):
+                transcribe_gemini(path,'bad English context',{'stt_model':'gemini-3.5-flash-lite','language':'ko','glossary':''},{'GEMINI_API_KEY':'fixture'})
+            self.assertEqual(post.call_count,2)
+            self.assertNotIn('bad English context',post.call_args.kwargs['json']['contents'][0]['parts'][0]['text'])
+
     def test_added_provider_auth_and_chat_transport(self):
         for provider in ('deepseek','mistral','xai'):
             with self.subTest(provider=provider), patch('backend.providers.OpenAI') as constructor:
@@ -35,6 +85,7 @@ class ProviderContractTests(unittest.TestCase):
                 wav.setnchannels(2);wav.setsampwidth(2);wav.setframerate(48000);wav.writeframes(b'\x01\x00'*96000)
             post=client.return_value.__enter__.return_value.post
             body={'candidates':[{'finishReason':'STOP','content':{'parts':[{'thought':True,'text':'hidden reasoning'},{'text':json.dumps({'transcript':'테스트 전사'})}]}}]}
+            post.return_value.status_code=200
             post.return_value.json.return_value=body
             settings={'stt_model':'gemini-2.5-flash-lite','language':'ko','glossary':'용어'}
             self.assertEqual(transcribe_gemini(path,'이전 문맥',settings,{'GEMINI_API_KEY':'gemini-fixture','OPENAI_API_KEY':'wrong-key'}),'테스트 전사')
@@ -80,7 +131,7 @@ class ProviderContractTests(unittest.TestCase):
         self.assertEqual(constructor.call_args.kwargs['base_url'],'https://api.groq.com/openai/v1')
 
     def test_compatible_providers_normalize_usage_and_json_mode(self):
-        for provider in ('groq','gemini','openrouter'):
+        for provider in ('groq','openrouter'):
             with self.subTest(provider=provider), patch('backend.providers.client_for') as factory:
                 method=factory.return_value.__enter__.return_value.chat.completions.create
                 method.return_value=SimpleNamespace(choices=[SimpleNamespace(finish_reason='stop',message=SimpleNamespace(content='{"ok":true}'))],usage=SimpleNamespace(prompt_tokens=12,completion_tokens=5))

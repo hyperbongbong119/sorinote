@@ -4,8 +4,8 @@ import { api, type Status, type Notify, type Provider } from './api';
 import { PageTitle } from './components';
 
 const names:Record<Provider,string>={openai:'OpenAI',groq:'Groq',gemini:'Google Gemini',anthropic:'Anthropic Claude',openrouter:'OpenRouter',deepseek:'DeepSeek',mistral:'Mistral',xai:'Grok (xAI)'};
-const defaults:Record<Provider,string>={openai:'gpt-5.6-luna',groq:'llama-3.3-70b-versatile',gemini:'gemini-2.5-flash-lite',anthropic:'claude-haiku-4-5',openrouter:'openai/gpt-4.1-mini',deepseek:'deepseek-flash',mistral:'mistral-small-latest',xai:'grok-4.7'};
-const suggestions:Record<Provider,string[]>={openai:['gpt-5.6-luna'],groq:['llama-3.3-70b-versatile','openai/gpt-oss-120b'],gemini:['gemini-2.5-flash-lite','gemini-3.1-flash-lite','gemini-3.5-flash-lite','gemini-3.8-flash'],anthropic:['claude-haiku-4-5','claude-sonnet-5-5'],openrouter:['openai/gpt-4.1-mini'],deepseek:['deepseek-flash','deepseek-v4-pro'],mistral:['mistral-small-latest','mistral-large-latest'],xai:['grok-4.7']};
+const defaults:Record<Provider,string>={openai:'gpt-5.6-luna',groq:'llama-3.3-70b-versatile',gemini:'gemini-3.5-flash-lite',anthropic:'claude-haiku-4-5',openrouter:'openai/gpt-4.1-mini',deepseek:'deepseek-flash',mistral:'mistral-small-latest',xai:'grok-4.7'};
+const suggestions:Record<Provider,string[]>={openai:['gpt-5.6-luna'],groq:['llama-3.3-70b-versatile','openai/gpt-oss-120b'],gemini:['gemini-3.5-flash-lite','gemini-3.8-flash','gemini-3.1-flash-lite'],anthropic:['claude-haiku-4-5','claude-sonnet-5-5'],openrouter:['openai/gpt-4.1-mini'],deepseek:['deepseek-flash','deepseek-v4-pro'],mistral:['mistral-small-latest','mistral-large-latest'],xai:['grok-4.7']};
 const emptyKeys={openai_key:'',groq_key:'',gemini_key:'',anthropic_key:'',openrouter_key:'',deepseek_key:'',mistral_key:'',xai_key:'',notion_token:''};
 const hints:Record<Provider,string>={openai:'기존 전사·요약을 그대로 사용할 때',groq:'Whisper 전사 또는 Llama·GPT-OSS 요약을 사용할 때',gemini:'하나의 Gemini 키로 음성 전사와 요약을 사용할 때',anthropic:'Haiku로 시작하거나 Sonnet으로 요약 품질을 비교할 때',openrouter:'여러 회사의 요약 모델을 하나의 API로 비교할 때',deepseek:'DeepSeek 모델로 요약할 때',mistral:'Mistral Small·Large로 요약할 때',xai:'Grok 모델로 요약할 때'};
 
