@@ -17,6 +17,7 @@ class Engine:
         self.threads = []
         self.last_error = ''
         self.note_lock = threading.RLock()
+        self.transcription_lock = threading.RLock()
 
     def start(self):
         self.store.recover()
@@ -42,8 +43,13 @@ class Engine:
             self.stop_event.wait(1)
 
     def transcription_tick(self):
+        with self.transcription_lock:
+            self._transcription_tick()
+
+    def _transcription_tick(self):
         # Never skip an earlier failed chunk in the same meeting: context stays chronological.
         rows = self.store.query('''SELECT c.* FROM chunks c WHERE c.status='pending' AND c.retry_at<=?
+            AND EXISTS(SELECT 1 FROM meetings m WHERE m.id=c.meeting_id AND m.deleted_at=0)
             AND NOT EXISTS(SELECT 1 FROM chunks earlier WHERE earlier.meeting_id=c.meeting_id
                 AND earlier.seq<c.seq AND earlier.status NOT IN ('done')) ORDER BY c.id LIMIT 1''', (time.time(),))
         if not rows:
@@ -71,7 +77,7 @@ class Engine:
             self._notes_tick()
 
     def _notes_tick(self):
-        meetings = self.store.query("SELECT * FROM meetings WHERE status IN ('recording','processing','interrupted','summarizing','complete') AND retry_at<=? ORDER BY created", (time.time(),))
+        meetings = self.store.query("SELECT * FROM meetings WHERE deleted_at=0 AND status IN ('recording','processing','interrupted','summarizing','complete') AND retry_at<=? ORDER BY created", (time.time(),))
         for m in meetings:
             mid = m['id']
             try:

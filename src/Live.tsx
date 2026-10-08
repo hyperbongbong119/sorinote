@@ -40,7 +40,7 @@ export default function Live({status, refresh, notify, open}: {status:Status;ref
       <div className="recording-clock"><strong>{duration(elapsed)}</strong><Wave level={status.recording ? status.level : 0}/></div>
       <button className={`primary record-button ${status.recording?'stop':''}`} disabled={busy||!title.trim()} onClick={toggle}>{status.recording?<Square size={18}/>:<Mic size={21}/>} {busy?'처리 중…':status.recording?'종료 및 요약':'녹음 시작'}</button>
     </section>
-    <section className="input-panel"><AudioInput source={status.settings.audio_source} disabled={status.recording||busy} canTranscribe={status.providers_configured[status.settings.stt_provider]} notify={notify} onChange={async source=>{setBusy(true);try{await api('/audio/source','PUT',{source});await refresh();}catch(e){notify((e as Error).message,true);}finally{setBusy(false);}}}/></section>
+
     {status.notion_configured && <label className="check-line"><input type="checkbox" checked={notion} disabled={status.recording} onChange={e=>setNotion(e.target.checked)}/> 완료 후 Notion에도 저장</label>}
     {(status.capture_error||meeting?.capture_warning) && <div className="notice warning">{status.capture_error||meeting?.capture_warning}</div>}
     {meeting?.error && <div className="notice warning">{meeting.error} <button onClick={()=>api(`/meetings/${meeting.id}/retry`,'POST').then(()=>notify('재시도를 요청했습니다.')).catch(e=>notify(e.message,true))}>다시 시도</button></div>}
@@ -53,5 +53,6 @@ export default function Live({status, refresh, notify, open}: {status:Status;ref
         {meeting && !status.recording && <button className="note-link" onClick={()=>open(meeting.id)}><FileText size={17}/> 회의록 열기 <ArrowUpRight size={17}/></button>}
       </section>
     </div>
+    <section className="input-panel"><AudioInput source={status.settings.audio_source} disabled={status.recording||busy} canTranscribe={status.providers_configured[status.settings.stt_provider]} notify={notify} onChange={async source=>{setBusy(true);try{await api('/audio/source','PUT',{source});await refresh();}catch(e){notify((e as Error).message,true);}finally{setBusy(false);}}}/></section>
   </>;
 }

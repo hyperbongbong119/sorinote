@@ -17,6 +17,29 @@ from tests.test_engine import FakeAI
 
 
 class ResilienceTests(unittest.TestCase):
+    def test_twenty_minutes_silence_stops_and_sound_resets_timer(self):
+        capture=self.engine.capture
+        with patch('backend.capture.time.monotonic',return_value=0):capture.check_silence(0,self.mid)
+        with patch('backend.capture.time.monotonic',return_value=1199):capture.check_silence(0,self.mid)
+        self.assertFalse(capture.stop_event.is_set())
+        with patch('backend.capture.time.monotonic',return_value=1199):capture.check_silence(.002,self.mid)
+        with patch('backend.capture.time.monotonic',return_value=1200):capture.check_silence(0,self.mid)
+        with patch('backend.capture.time.monotonic',return_value=2399):capture.check_silence(0,self.mid)
+        self.assertFalse(capture.stop_event.is_set())
+        with patch('backend.capture.time.monotonic',return_value=2400):capture.check_silence(0,self.mid)
+        self.assertTrue(capture.stop_event.is_set())
+        self.assertIn('자동 종료',self.store.meeting(self.mid)['capture_warning'])
+
+    def test_deleted_meeting_queue_is_paused_until_restored(self):
+        self.enqueue(1)
+        self.store.update(self.mid,status='processing',deleted_at=time.time())
+        self.engine.transcription_tick();self.engine.notes_tick()
+        self.assertEqual(self.store.chunks(self.mid)[0]['status'],'pending')
+        self.assertEqual(self.store.meeting(self.mid)['summary'],'')
+        self.store.update(self.mid,deleted_at=0)
+        self.engine.transcription_tick()
+        self.assertEqual(self.store.chunks(self.mid)[0]['status'],'done')
+
     def test_selected_source_survives_device_index_changes_and_never_falls_back(self):
         d={'name':'My microphone','isLoopbackDevice':False,'maxInputChannels':1,'index':8}
         audio=MagicMock()

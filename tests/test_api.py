@@ -13,6 +13,24 @@ from fastapi.testclient import TestClient
 
 
 class LocalApiTests(unittest.TestCase):
+    def test_delete_hides_and_preserves_record_until_restore(self):
+        m=store.create('삭제 복원 검증','meeting');store.update(m['id'],status='complete',summary='보존할 요약')
+        response=self.client.delete('/api/meetings/'+m['id'],headers=self.headers)
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(self.client.get('/api/meetings',headers=self.headers).json(),[])
+        self.assertEqual(len(self.client.get('/api/meetings?deleted=true',headers=self.headers).json()),1)
+        self.assertTrue((store.folder(m['id'])/'summary.md').exists())
+        self.assertEqual(self.client.get('/api/meetings/'+m['id'],headers=self.headers).status_code,404)
+        self.assertEqual(self.client.post('/api/meetings/'+m['id']+'/retry',headers=self.headers).status_code,404)
+        restored=self.client.post('/api/meetings/'+m['id']+'/restore',headers=self.headers)
+        self.assertEqual(restored.json()['summary'],'보존할 요약')
+        self.assertEqual(len(self.client.get('/api/meetings',headers=self.headers).json()),1)
+
+    def test_active_recording_cannot_be_deleted(self):
+        m=store.create('현재 녹음','meeting')
+        self.assertEqual(self.client.delete('/api/meetings/'+m['id'],headers=self.headers).status_code,409)
+        self.assertEqual(store.meeting(m['id'])['deleted_at'],0)
+
     def test_source_preview_does_not_create_meeting_or_send_silence_to_api(self):
         from backend.app import engine
         before=len(store.query('SELECT id FROM meetings'))

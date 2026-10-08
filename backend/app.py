@@ -67,6 +67,10 @@ async def local_access(request: Request, call_next):
             return Response(status_code=403)
         if request.url.path != '/api/bootstrap' and not tokenlib.compare_digest(request.headers.get('x-sorinote-token',''),token):
             return JSONResponse({'detail':'앱을 새로고침하세요.'}, status_code=403)
+        if request.url.path.startswith('/api/meetings/') and not request.url.path.endswith('/restore'):
+            mid=request.url.path.split('/')[3]
+            if store.query('SELECT id FROM meetings WHERE id=? AND deleted_at>0',(mid,)):
+                return JSONResponse({'detail':'삭제된 회의록입니다. 먼저 복원하세요.'},status_code=404)
     response = await call_next(request)
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['Referrer-Policy'] = 'no-referrer'
@@ -132,6 +136,8 @@ class Settings(BaseModel):
 
 def detail(mid):
     m = store.meeting(mid)
+    if m['deleted_at']:
+        raise KeyError(mid)
     chunks = store.chunks(mid)
     return {**m, 'state':json.loads(m['state']), 'transcript':store.transcript(mid),
             'chunks':[{k:c[k] for k in ('id','seq','start','duration','status','text','error','attempts')} for c in chunks],
@@ -146,7 +152,7 @@ def bootstrap():
 @app.get('/api/status')
 def status():
     current = store.query("SELECT id FROM meetings WHERE status='recording' ORDER BY created DESC LIMIT 1")
-    counts = store.query("SELECT count(*) AS n FROM chunks WHERE status NOT IN ('done')")[0]['n']
+    counts = store.query("SELECT count(*) AS n FROM chunks c JOIN meetings m ON m.id=c.meeting_id WHERE c.status NOT IN ('done') AND m.deleted_at=0")[0]['n']
     keys = secrets()
     configured = {p:bool(keys.get(v['env'])) for p,v in PROVIDERS.items()}
     settings = store.settings()
@@ -223,11 +229,11 @@ def test_source(body: SourceTest):
 
 
 @app.get('/api/meetings')
-def meetings(q: str = '', favorite: bool = False):
+def meetings(q: str = '', favorite: bool = False, deleted: bool = False):
     rows = store.query('''SELECT m.*, (SELECT count(*) FROM chunks c WHERE c.meeting_id=m.id AND c.status!='done') AS pending
         FROM meetings m WHERE (?='' OR instr(lower(m.title||m.summary||m.notes||m.tags),lower(?))>0
         OR EXISTS(SELECT 1 FROM chunks c WHERE c.meeting_id=m.id AND instr(lower(c.text),lower(?))>0))
-        AND (?=0 OR favorite=1) ORDER BY created DESC''',(q,q,q,int(favorite)))
+        AND (?=0 OR favorite=1) AND ((?=0 AND deleted_at=0) OR (?=1 AND deleted_at>0)) ORDER BY created DESC''',(q,q,q,int(favorite),int(deleted),int(deleted)))
     return [{k:v for k,v in r.items() if k not in ('summary','state','notes')} for r in rows]
 
 
@@ -259,6 +265,7 @@ def stop():
 @app.patch('/api/meetings/{mid}')
 def edit(mid: str, body: EditMeeting):
     with engine.note_lock:
+        detail(mid)
         m = store.meeting(mid)
         values = body.model_dump(exclude_none=True)
         if 'title' in values:
@@ -271,6 +278,26 @@ def edit(mid: str, body: EditMeeting):
             store.update(mid, **values)
             store.export(mid)
         return detail(mid)
+
+
+@app.delete('/api/meetings/{mid}')
+def delete_meeting(mid: str):
+    with start_lock, engine.transcription_lock, engine.note_lock:
+        m=store.meeting(mid)
+        if m['status']=='recording':
+            raise HTTPException(409,'녹음을 종료한 뒤 삭제하세요.')
+        store.update(mid,deleted_at=time.time())
+        store.export(mid)
+    return {'ok':True}
+
+
+@app.post('/api/meetings/{mid}/restore')
+def restore_meeting(mid: str):
+    with engine.transcription_lock, engine.note_lock:
+        store.meeting(mid)
+        store.update(mid,deleted_at=0)
+        store.export(mid)
+    return detail(mid)
 
 
 @app.post('/api/meetings/{mid}/retry')

@@ -86,6 +86,7 @@ class Capture:
         self.error = ''
         self.lock = threading.Lock()
         self.source = 'default'
+        self.silent_since = None
 
     def start(self, mid):
         with self.lock:
@@ -93,6 +94,7 @@ class Capture:
                 raise ValueError('이미 녹음 중입니다.')
             self.mid, self.error = mid, ''
             self.source = self.store.settings().get('audio_source','default')
+            self.silent_since = time.monotonic()
             self.stop_event.clear()
             self.thread = threading.Thread(target=self._run, args=(mid,), daemon=True, name='wasapi-capture')
             self.thread.start()
@@ -103,6 +105,16 @@ class Capture:
             self.thread.join(timeout=5)
             if self.thread.is_alive():
                 raise ValueError('오디오 장치 종료를 기다리는 중입니다. 잠시 후 다시 시도하세요.')
+
+    def check_silence(self, rms, mid):
+        now=time.monotonic()
+        if rms>=.001:
+            self.silent_since=None
+        elif self.silent_since is None:
+            self.silent_since=now
+        elif now-self.silent_since>=20*60:
+            self.store.update(mid,capture_warning='무음이 20분 이상 이어져 녹음을 자동 종료했습니다.')
+            self.stop_event.set()
 
     def seal(self, row):
         raw = Path(row['path'])
@@ -185,6 +197,7 @@ class Capture:
                     f.write(data)
                     rms = float(np.sqrt(np.mean(np.frombuffer(data, dtype='<i2').astype(np.float32) ** 2))) / 32768
                     self.level = min(1., rms * 10)
+                    self.check_silence(rms, mid)
                     dt = len(data) / 2 / channels / rate
                     elapsed += dt
                     quiet = quiet + dt if rms < 0.008 else 0

@@ -63,6 +63,8 @@ class Store:
                 existing=self.settings()
                 snapshot=json.dumps({k:existing[k] for k in AI_FIELDS})
                 c.execute('UPDATE meetings SET ai_settings=?',(snapshot,))
+            if 'deleted_at' not in {r[1] for r in c.execute('PRAGMA table_info(meetings)')}:
+                c.execute('ALTER TABLE meetings ADD COLUMN deleted_at REAL NOT NULL DEFAULT 0')
 
     @contextmanager
     def connect(self):
@@ -97,7 +99,7 @@ class Store:
         # Field names only come from application-owned constants, never request keys.
         allowed = {'title','notes','tags','favorite','summary','video_path','status','ended','error',
                    'state','state_until','retry_at','notion_requested','notion_id','notion_url',
-                   'notion_status','notion_cursor','cleaned','capture_warning','ai_settings'}
+                   'notion_status','notion_cursor','cleaned','capture_warning','ai_settings','deleted_at'}
         if not fields.keys() <= allowed:
             raise ValueError('Unsupported field')
         self.execute('UPDATE meetings SET ' + ','.join(f'{k}=?' for k in fields) + ' WHERE id=?',
